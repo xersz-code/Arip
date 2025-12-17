@@ -1,0 +1,63 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>test usn kontol</title>
+</head>
+<body>
+
+  <input id="username" placeholder="usn lu memek">
+  <button onclick="save()">ini tombol save ya</button>
+
+  <pre id="out"></pre>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAAqn-YpozhEpnlhR0drFKVgqMtlKXAr9o",
+      authDomain: "corazon-fa8fd.firebaseapp.com",
+      databaseURL: "https://corazon-fa8fd-default-rtdb.firebaseio.com",
+      projectId: "corazon-fa8fd",
+      storageBucket: "corazon-fa8fd.appspot.com",
+      messagingSenderId: "436124503352",
+      appId: "1:436124503352:web:b016aae43ad5d28de185cd"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    window.save = () => {
+      const u = document.getElementById("username").value.trim();
+      if (!u) return;
+
+      set(ref(db, "users/" + u), {
+        username: u,
+        time: Date.now()
+      });
+    };
+
+    onValue(ref(db, "users"), snap => {
+      const data = snap.val();
+      let text = "";
+
+      if (data) {
+
+        const arr = Object.values(data);
+
+
+        arr.sort((a, b) => a.time - b.time);
+
+        for (const user of arr) {
+          if (user.username) {
+            text += `"username": "${user.username}"\n`;
+          }
+        }
+      }
+
+      document.getElementById("out").textContent = text;
+    });
+  </script>
+
+</body>
+</html> 
