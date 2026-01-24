@@ -43,8 +43,8 @@ button:hover { background:#333; }
   <div class="leaderboard" id="leaderboard">Loading...</div>
 </div>
 
-<script>
-// --- Firebase config ---
+    <script>
+
 const firebaseConfig = {
   apiKey: "AIzaSyCqVnGUCuuqKXxEhBVqF-7SDdqbZ7or4W0",
   authDomain: "rngg-bb71a.firebaseapp.com",
@@ -57,12 +57,12 @@ let currentUser = null;
 let score = 0;
 let rolling = false;
 
-// --- Show auth message ---
+
 function showAuthMsg(msg){
   document.getElementById('authMsg').textContent = msg;
 }
 
-// --- Signup ---
+
 async function signup(){
   const username = document.getElementById('usernameInput').value.trim();
   const password = document.getElementById('passwordInput').value;
@@ -82,7 +82,7 @@ async function signup(){
   }
 }
 
-// --- Login ---
+
 async function login(auto=false){
   const username = document.getElementById('usernameInput').value.trim();
   const password = document.getElementById('passwordInput').value;
@@ -97,6 +97,7 @@ async function login(auto=false){
 
     currentUser = username;
     score = doc.data().score || 0;
+
     document.getElementById('userDisplay').textContent = currentUser;
     document.getElementById('score').textContent = score;
     document.getElementById('authBox').style.display = "none";
@@ -107,25 +108,26 @@ async function login(auto=false){
       sessionStorage.setItem('currentPass', password);
     }
 
-    updateLeaderboard();
+    
+    setupLeaderboardRealtime();
 
   }catch(e){
     showAuthMsg("Error: " + e.message);
   }
 }
 
-// --- Auto-login on refresh ---
+
 window.addEventListener('load', () => {
   const savedUser = sessionStorage.getItem('currentUser');
   const savedPass = sessionStorage.getItem('currentPass');
   if(savedUser && savedPass){
     document.getElementById('usernameInput').value = savedUser;
     document.getElementById('passwordInput').value = savedPass;
-    login(true); // auto-login without overwriting sessionStorage
+    login(true);
   }
 });
 
-// --- Logout ---
+
 function logout(){
   currentUser = null;
   score = 0;
@@ -135,10 +137,10 @@ function logout(){
   document.getElementById('gameBox').style.display = "none";
   document.getElementById('usernameInput').value = "";
   document.getElementById('passwordInput').value = "";
-  showAuthMsg("Log out");
+  showAuthMsg("Logged out");
 }
 
-// --- RNG Roll ---
+
 function startRoll(){
   if(rolling) return;
   rolling = true;
@@ -156,51 +158,52 @@ function startRoll(){
   },50);
 }
 
-async function finalizeRoll() {
-  const rollNumber = Math.floor(Math.random() * 200) + 1;
-  const positive = Math.random() < 0.5;
+async function finalizeRoll(){
+  const rollNumber = Math.floor(Math.random()*200)+1;
+  const positive = Math.random()<0.5;
   const change = positive ? rollNumber : -rollNumber;
 
-  // Update local score immediately
+  
   score = Math.max(0, score + change);
 
-  // Update the roll display
+  
   const rollEl = document.getElementById("roll");
-  rollEl.textContent = (change >= 0 ? "+" : "") + rollNumber;
-  rollEl.className = "roll " + (change >= 0 ? "plus" : "minus");
+  rollEl.textContent = (change>=0?"+":"") + rollNumber;
+  rollEl.className = "roll " + (change>=0?"plus":"minus");
 
-  // Update user's own score instantly
+  
   document.getElementById("score").textContent = score;
 
   rolling = false;
 
   try {
-    // Save score in Firestore and then update leaderboard
+    
     await db.collection("users").doc(currentUser).update({ score });
-    updateLeaderboard(); // now leaderboard will include the latest score
-  } catch (e) {
+    
+  } catch(e) {
     console.error("Error updating score:", e);
     showAuthMsg("Error updating score in database");
   }
-    }
-
-// --- Leaderboard ---
-async function updateLeaderboard(){
-  const lbEl = document.getElementById("leaderboard");
-  try{
-    const snapshot = await db.collection("users").orderBy("score","desc").limit(12).get();
-    lbEl.innerHTML = "";
-    let count = 0;
-    snapshot.forEach(doc=>{
-      count++;
-      const div = document.createElement("div");
-      div.textContent = count + ". " + doc.id + " (" + doc.data().score + ")";
-      lbEl.appendChild(div);
-    });
-  }catch(e){
-    lbEl.textContent = "Error loading leaderboard";
-  }
 }
-</script>
+
+
+function setupLeaderboardRealtime(){
+  const lbEl = document.getElementById("leaderboard");
+  db.collection("users").orderBy("score","desc").limit(12)
+    .onSnapshot(snapshot => {
+      lbEl.innerHTML = "";
+      let count = 0;
+      snapshot.forEach(doc=>{
+        count++;
+        const div = document.createElement("div");
+        div.textContent = count + ". " + doc.id + " (" + doc.data().score + ")";
+        lbEl.appendChild(div);
+      });
+    }, err => {
+      lbEl.textContent = "Error loading leaderboard";
+      console.error(err);
+    });
+}
+    </script>
 </body>
 </html>
