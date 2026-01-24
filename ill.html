@@ -156,25 +156,33 @@ function startRoll(){
   },50);
 }
 
-async function finalizeRoll(){
-  const rollNumber = Math.floor(Math.random()*200)+1;
-  const positive = Math.random()<0.5;
+async function finalizeRoll() {
+  const rollNumber = Math.floor(Math.random() * 200) + 1;
+  const positive = Math.random() < 0.5;
   const change = positive ? rollNumber : -rollNumber;
 
+  // Update local score immediately
   score = Math.max(0, score + change);
 
+  // Update the roll display
   const rollEl = document.getElementById("roll");
-  rollEl.textContent = (change>=0?"+":"") + rollNumber;
-  rollEl.className = "roll " + (change>=0?"plus":"minus");
+  rollEl.textContent = (change >= 0 ? "+" : "") + rollNumber;
+  rollEl.className = "roll " + (change >= 0 ? "plus" : "minus");
 
+  // Update user's own score instantly
   document.getElementById("score").textContent = score;
 
-  // Save score in Firestore asynchronously
-  db.collection("users").doc(currentUser).update({ score }).catch(e => console.error(e));
-
   rolling = false;
-  updateLeaderboard();
-}
+
+  try {
+    // Save score in Firestore and then update leaderboard
+    await db.collection("users").doc(currentUser).update({ score });
+    updateLeaderboard(); // now leaderboard will include the latest score
+  } catch (e) {
+    console.error("Error updating score:", e);
+    showAuthMsg("Error updating score in database");
+  }
+    }
 
 // --- Leaderboard ---
 async function updateLeaderboard(){
