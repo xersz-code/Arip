@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chill RNG Game Firebase</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<style>
+/* ---------- CHILL BACKGROUND ---------- */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0e1f24;
+    font-family: system-ui, sans-serif;
+}
+
+body {
+    background:
+        radial-gradient(circle at center, rgba(90,210,190,0.08), transparent 55%),
+        radial-gradient(circle at 20% 80%, rgba(120,180,255,0.05), transparent 45%),
+        #0e1f24;
+}
+
+.particle {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: rgba(160,240,230,0.6);
+    border-radius: 50%;
+    animation: drift 18s linear infinite;
+    opacity: 0;
+}
+
+@keyframes drift {
+    0% { transform: translateY(100vh); opacity: 0; }
+    15% { opacity: 0.6; }
+    85% { opacity: 0.6; }
+    100% { transform: translateY(-10vh); opacity: 0; }
+}
+
+.glow-sweep {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, transparent 0%, rgba(90,210,190,0.04) 50%, transparent 100%);
+    animation: sweep 10s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* ---------- GAME UI ---------- */
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    color: #eee;
+}
+
+.box {
+    position: relative;   /* Add this */
+    z-index: 10;          /* Make sure UI is above particles */
+    width: 500px;
+    text-align: center;
+    border: 1px solid #333;
+    padding: 20px;
+    margin-bottom: 20px;
+    background: rgba(0,0,0,0.4);
+}
+
+/* Keep background layers behind */
+.particle, .glow-sweep {
+    z-index: 0;
+}
+
+input { padding:8px; margin:5px; width:80%; }
+button { padding:8px 16px; margin:5px; cursor:pointer; background:#222; color:#fff; border:1px solid #555; }
+button:hover { background:#333; }
+
+.roll { font-size:32px; margin:10px 0; }
+.plus { color:#55ff55; }
+.minus { color:#ff5555; }
+
+.leaderboard { display:flex; flex-wrap: wrap; justify-content:flex-start; gap:10px; width:100%; }
+.leaderboard div { border:1px solid #555; padding:5px; flex:1 0 30%; text-align:center; }
+
+/* ---------- JACKPOT OVERLAY ---------- */
+#flash {
+    position: fixed;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+#text {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 6vw;
+    font-family: Arial, sans-serif;
+    letter-spacing: 0.2em;
+    color: black;
+    opacity: 0;
+    background: white;
+    z-index: 4;
+}
+</style>
+</head>
+<body>
+
+<!-- Background particles -->
+<div class="particle" style="left:10%; animation-delay:0s;"></div>
+<div class="particle" style="left:25%; animation-delay:4s;"></div>
+<div class="particle" style="left:40%; animation-delay:1s;"></div>
+<div class="particle" style="left:55%; animation-delay:6s;"></div>
+<div class="particle" style="left:70%; animation-delay:2s;"></div>
+<div class="particle" style="left:85%; animation-delay:5s;"></div>
+<div class="glow-sweep"></div>
+
+<!-- AUTH -->
+<div class="box" id="authBox">
+  <h2>Signup / Login</h2>
+  <p style="color:#fff00; margin:5px 0;">Agak lemot websiteny jembut</p>
+  <input type="text" id="usernameInput" placeholder="Username"><br>
+  <input type="text" id="passwordInput" placeholder="Password"><br>
+  <button onclick="signup()">Sign Up</button>
+  <button onclick="login()">Log In</button>
+  <p id="authMsg"></p>
+</div>
+
+<!-- GAME -->
+<div class="box" id="gameBox" style="display:none;">
+  <p>Welcome, <span id="userDisplay"></span>!</p>
+  <p>Score: <span id="score">0</span></p>
+  <p>Title: <span id="scoreTitle">---</span></p>
+  <div class="roll" id="roll">---</div>
+  <button onclick="startRoll()">ROLL</button>
+  <button onclick="logout()">LOGOUT</button>
+</div>
+<audio id="yesAudio" src="yes.mp3"></audio>
+<audio id="noAudio" src="no.mp3"></audio>
+<audio id="bgMusic" src="background.mp3" loop></audio>
+
+<!-- LEADERBOARD -->
+<div class="box">
+  <h3>Leaderboard</h3>
+  <div class="leaderboard" id="leaderboard">Loading...</div>
+</div>
+
+<!-- JACKPOT -->
+<div id="container">
+    <div id="flash" style="position:fixed;inset:0;background:white;opacity:0;pointer-events:none;"></div>
+    <div id="text" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:6vw;font-family:Arial;color:black;opacity:0;background:white;">JackPot</div>
+</div>
+
+<script>
+  async function triggerJackpot() {
+    const flash = document.getElementById("flash");
+    const text  = document.getElementById("text");
+    const container = document.getElementById("container"); // kalau kamu bungkus seluruh game di container
+
+    // Sembunyikan game UI sementara
+    document.getElementById("gameBox").style.display = "none";
+    document.getElementById("authBox").style.display = "none";
+
+    // Reset tampilan flash & text
+    flash.style.opacity = 1;
+    text.style.opacity = 1;
+    text.textContent = "JackPot!!!";
+    
+    // Tambahkan besar jackpot ke score
+    const jackpotScore = 10000;
+    score += jackpotScore;
+    document.getElementById("score").textContent = score;
+    updateScoreTitle(score);
+
+    try {
+        await db.collection("users").doc(currentUser).update({ score });
+    } catch(e){
+        console.error("Error updating jackpot score:", e);
+    }
+
+    // Optional: play jackpot sound
+    const jackpotAudio = new Audio("jackpot.mp3");
+    jackpotAudio.play();
+
+    // Setelah 2 detik, hilangkan animasi dan kembalikan gameBox
+    setTimeout(() => {
+        flash.style.opacity = 0;
+        text.style.opacity = 0;
+        document.getElementById("gameBox").style.display = "block";
+    }, 2000);
+}
+
+const firebaseConfig = {
+apiKey: "AIzaSyCqVnGUCuuqKXxEhBVqF-7SDdqbZ7or4W0",
+authDomain: "rngg-bb71a.firebaseapp.com",
+projectId: "rngg-bb71a"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let currentUser = null;
+let score = 0;
+let rolling = false;
+let rollLimit = 300;        // normal limit
+let eventActive = false;    // tracks temporary boost
+let djInterval = null;
+
+function startDJBackground() {
+    const body = document.body;
+    let hue = 0;
+
+    if (djInterval) return; // prevent stacking
+
+    djInterval = setInterval(() => {
+        hue = (hue + 10) % 360;
+        body.style.background = `hsl(${hue}, 100%, 50%)`;
+    }, 200); // every 0.2s
+}
+
+function stopDJBackground() {
+    clearInterval(djInterval);
+    djInterval = null;
+    document.body.style.background = "#111"; // revert to normal background
+}
+
+function showAuthMsg(msg){ document.getElementById('authMsg').textContent = msg; }
+
+async function signup(){
+const username = document.getElementById('usernameInput').value.trim();
+const password = document.getElementById('passwordInput').value;
+if(!username || !password){ showAuthMsg("Masukkin username sama password otak udang"); return; }
+if(/[/.#$[\]]/.test(username)){ showAuthMsg("Salah username gng"); return; }
+
+try{
+const userRef = db.collection("users").doc(username);
+const doc = await userRef.get();
+if(doc.exists){ showAuthMsg("Username udah ada kontol"); return; }
+await userRef.set({ password, score: 0 });
+showAuthMsg("Signup berhasil bagus, tinggal login");
+}catch(e){ showAuthMsg("Error: " + e.message); }
+}
+
+async function login(auto=false){
+const username = document.getElementById('usernameInput').value.trim();
+const password = document.getElementById('passwordInput').value;
+if(!username || !password){ showAuthMsg("Masukkin username sama password otak udang"); return; }
+
+try{
+const userRef = db.collection("users").doc(username);
+const doc = await userRef.get();
+if(!doc.exists || doc.data().password !== password){
+showAuthMsg("Salah password kalau ga usn ganteng"); return;
+}
+currentUser = username;
+score = doc.data().score || 0;
+document.getElementById('userDisplay').textContent = currentUser;
+document.getElementById('score').textContent = score;
+document.getElementById('authBox').style.display = "none";
+document.getElementById('gameBox').style.display = "block";
+
+if(!auto){
+  sessionStorage.setItem('currentUser', username);
+  sessionStorage.setItem('currentPass', password);
+}
+
+setupLeaderboardRealtime();
+}catch(e){ showAuthMsg("Error: " + e.message); }
+}
+
+window.addEventListener('load', () => {
+const savedUser = sessionStorage.getItem('currentUser');
+const savedPass = sessionStorage.getItem('currentPass');
+if(savedUser && savedPass){
+document.getElementById('usernameInput').value = savedUser;
+document.getElementById('passwordInput').value = savedPass;
+login(true);
+}
+});
+
+function logout(){
+currentUser = null;
+score = 0;
+sessionStorage.removeItem('currentUser');
+sessionStorage.removeItem('currentPass');
+document.getElementById('authBox').style.display = "block";
+document.getElementById('gameBox').style.display = "none";
+document.getElementById('usernameInput').value = "";
+document.getElementById('passwordInput').value = "";
+showAuthMsg("Logged out");
+}
+
+/* ---------- ROLL FUNCTION ---------- */
+function startRoll(){
+if(rolling) return;
+rolling = true;
+const rollEl = document.getElementById("roll");
+let ticks = 0;
+const totalTicks = 20 + Math.floor(Math.random()*10);
+
+const interval = setInterval(()=>{
+const tempNum = Math.floor(Math.random()*301); // 0-300
+const tempSign = Math.random()<0.5 ? "-" : "+";
+rollEl.textContent = tempSign + tempNum;
+rollEl.className = "roll " + (tempSign==="+"?"plus":"minus");
+ticks++;
+if(ticks>=totalTicks){ clearInterval(interval); finalizeRoll(); }
+},50);
+}
+
+async function finalizeRoll(){
+    const chance = Math.random();
+    let change = 0;
+
+    if(chance <= 0.01){
+        // JACKPOT 1%
+        triggerJackpot();
+        change = 0; // jangan tambah score lagi, jackpot sudah nambah 10000
+    } else {
+        const rollNumber = Math.floor(Math.random() * (rollLimit + 1));
+        const positive = Math.random() < 0.65; // 65% chance naik
+        change = positive ? rollNumber : -rollNumber;
+    }
+
+    // Play sound based on positive / negative
+    const yesAudio = document.getElementById("yesAudio");
+    const noAudio  = document.getElementById("noAudio");
+    if(change > 0){
+        yesAudio.currentTime = 0;
+        yesAudio.play();
+    } else if(change < 0){
+        noAudio.currentTime = 0;
+        noAudio.play();
+    }
+
+    // Update score & UI
+    score = Math.max(0, score + change);
+    const rollEl = document.getElementById("roll");
+    rollEl.textContent = (change>=0?"+":"") + change;
+    rollEl.className = "roll " + (change>=0?"plus":"minus");
+
+    document.getElementById("score").textContent = score;
+    updateScoreTitle(score);
+
+    rolling = false;
+
+    try { 
+        await db.collection("users").doc(currentUser).update({ score });
+    } catch(e){
+        console.error("Error updating score:", e); 
+        showAuthMsg("Error updating score in database");
+    }
+}
+
+function updateScoreTitle(score) {
+    let title = "";
+
+    if(score < 500) title = "Ayam";
+    else if(score < 1000) title = "Ayam Jagoan dikit";
+    else if(score < 1500) title = "Ayam Mentaliti";
+    else if(score < 2000) title = "Kak Esti";
+    else if(score < 3000) title = "Esti Bakar";
+    else if(score < 5000) title = "Pak Miswanto Titik dua";
+    else if(score < 7000) title = "Toma Toma";
+    else title = "Omg Idol";
+
+    document.getElementById("scoreTitle").textContent = title;
+}
+
+/* ---------- JACKPOT ANIMATION ---------- */
+const flash = document.getElementById("flash");
+const text  = document.getElementById("text");
+
+function triggerJackpot(){
+let start = performance.now();
+let lastFlash = 0;
+function animate(time){
+const t = (time - start)/1000;
+if(t < 10.8){
+    const interval = Math.max(0.05, 0.8 - t*0.07);
+    if(time - lastFlash > interval*1000){
+        lastFlash = time;
+        flash.style.opacity = 1;
+        setTimeout(()=>{ flash.style.opacity=0; }, 40);
+        const maxShake = Math.min(15, t*2);
+        const x = (Math.random()-0.5)*maxShake;
+        const y = (Math.random()-0.5)*maxShake;
+        document.body.style.transform = `translate(${x}px,${y}px)`;
+    } else { document.body.style.transform='translate(0,0)'; }
+} 
+if(t>=10.8){
+    flash.style.opacity=1;
+    const fadeT = Math.min((t-10.8)/2.5,1);
+    flash.style.opacity = 1-fadeT;
+    text.style.opacity=1;
+    document.body.style.transform='translate(0,0)';
+}
+if(t<15) requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+}
+
+const bgMusic = document.getElementById("bgMusic");
+bgMusic.volume = 0.3; // adjust volume if needed
+
+// Play music when user first clicks anywhere on the page
+function startBackgroundMusic() {
+    bgMusic.play().catch(() => {
+        console.log("Background music blocked until user interaction");
+    });
+    // remove this event listener after first play
+    window.removeEventListener('click', startBackgroundMusic);
+}
+
+// Attach to first click
+window.addEventListener('click', startBackgroundMusic);
+
+/* ---------- LEADERBOARD ---------- */
+function setupLeaderboardRealtime(){
+const lbEl = document.getElementById("leaderboard");
+db.collection("users").orderBy("score","desc").limit(12)
+.onSnapshot(snapshot=>{
+    lbEl.innerHTML="";
+    let count=0;
+    snapshot.forEach(doc=>{
+        count++;
+        const div = document.createElement("div");
+        div.textContent = count + ". " + doc.id + " (" + doc.data().score + ")";
+        lbEl.appendChild(div);
+    });
+}, err => { lbEl.textContent="Error loading leaderboard"; console.error(err); });
+}
+
+function triggerTemporaryLimitBoost(duration = 60000, newLimit = 500) {
+    if (eventActive) return;
+
+    eventActive = true;
+    const originalLimit = rollLimit;
+    rollLimit = newLimit;
+
+    console.log(`[EVENT] Roll limit temporarily boosted to ±${newLimit} for ${duration/1000}s`);
+
+    // Start DJ background
+    startDJBackground();
+
+    // Auto revert after duration
+    setTimeout(() => {
+        rollLimit = originalLimit;
+        eventActive = false;
+        stopDJBackground();
+        console.log(`[EVENT] Roll limit reverted to ±${originalLimit}`);
+    }, duration);
+}
+</script>
+
+</body>
+</html>
