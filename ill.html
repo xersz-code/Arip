@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chill RNG Game Firebase</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<style>
+/* ---------- CHILL BACKGROUND (HTML KEDUA) ---------- */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0e1f24;
+    font-family: system-ui, sans-serif;
+}
+
+body {
+    background:
+        radial-gradient(circle at center, rgba(90,210,190,0.08), transparent 55%),
+        radial-gradient(circle at 20% 80%, rgba(120,180,255,0.05), transparent 45%),
+        #0e1f24;
+}
+
+/* PARTICLES */
+.particle {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: rgba(160,240,230,0.6);
+    border-radius: 50%;
+    animation: drift 18s linear infinite;
+    opacity: 0;
+}
+
+@keyframes drift {
+    0% { transform: translateY(100vh); opacity: 0; }
+    15% { opacity: 0.6; }
+    85% { opacity: 0.6; }
+    100% { transform: translateY(-10vh); opacity: 0; }
+}
+
+/* ---------- UI ---------- */
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    color: #eee;
+}
+
+.box {
+    position: relative;
+    z-index: 10;
+    width: 500px;
+    text-align: center;
+    border: 1px solid #333;
+    padding: 20px;
+    margin-bottom: 20px;
+    background: rgba(0,0,0,0.4);
+}
+
+input {
+    padding: 8px;
+    margin: 5px;
+    width: 80%;
+    background: #111;
+    border: 1px solid #444;
+    color: #eee;
+}
+
+button {
+    padding: 8px 16px;
+    margin: 5px;
+    cursor: pointer;
+    background: #222;
+    color: #fff;
+    border: 1px solid #555;
+}
+button:hover { background: #333; }
+
+.roll { font-size: 32px; margin: 10px 0; }
+.plus { color: #55ff55; }
+.minus { color: #ff5555; }
+
+/* ---------- BET SYSTEM (DITAMBAHKAN) ---------- */
+.bet-box {
+    border-top: 1px solid #333;
+    margin-top: 15px;
+    padding-top: 15px;
+}
+
+.btn-plus { border-color:#55ff55; color:#55ff55; }
+.btn-minus { border-color:#ff5555; color:#ff5555; }
+
+.active-bet-plus {
+    background:#55ff55 !important;
+    color:#000 !important;
+}
+.active-bet-minus {
+    background:#ff5555 !important;
+    color:#000 !important;
+}
+
+/* ---------- LEADERBOARD ---------- */
+.leaderboard {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 10px;
+    width: 100%;
+}
+.leaderboard div {
+    border: 1px solid #555;
+    padding: 5px;
+    flex: 1 0 30%;
+    text-align: center;
+}
+
+/* ---------- JACKPOT ---------- */
+#flash {
+    position: fixed;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+#text {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 6vw;
+    font-family: Arial, sans-serif;
+    letter-spacing: 0.2em;
+    color: black;
+    opacity: 0;
+    background: white;
+    z-index: 4;
+}
+</style>
+</head>
+
+<body>
+
+<!-- PARTICLES -->
+<div class="particle" style="left:10%;animation-delay:0s"></div>
+<div class="particle" style="left:25%;animation-delay:4s"></div>
+<div class="particle" style="left:40%;animation-delay:1s"></div>
+<div class="particle" style="left:55%;animation-delay:6s"></div>
+<div class="particle" style="left:70%;animation-delay:2s"></div>
+<div class="particle" style="left:85%;animation-delay:5s"></div>
+
+<!-- AUTH (STRUKTUR HTML KEDUA) -->
+<div class="box" id="authBox">
+  <h2>Signup / Login</h2>
+  <p style="color:#fff00;margin:5px 0">Agak lemot websiteny jembut</p>
+  <input type="text" id="usernameInput" placeholder="Username"><br>
+  <input type="password" id="passwordInput" placeholder="Password"><br>
+  <button onclick="signup()">Sign Up</button>
+  <button onclick="login()">Log In</button>
+  <p id="authMsg"></p>
+</div>
+
+<!-- GAME (STRUKTUR HTML KEDUA + BET) -->
+<div class="box" id="gameBox" style="display:none">
+  <p>Welcome, <span id="userDisplay"></span>!</p>
+  <p>Score: <span id="score">0</span></p>
+  <p>Title: <span id="scoreTitle">---</span></p>
+
+  <div class="roll" id="roll">---</div>
+  <button onclick="startRoll()">ROLL</button>
+
+  <!-- BET SYSTEM -->
+  <div class="bet-box">
+    <p style="font-size:0.8em;color:#aaa">Betting Zone (Reset after roll)</p>
+    <input type="number" id="betAmount" placeholder="Nominal Bet" style="width:60%">
+    <div>
+      <button id="btnBetPlus" class="btn-plus" onclick="setBet('+')">Bet +</button>
+      <button id="btnBetMinus" class="btn-minus" onclick="setBet('-')">Bet -</button>
+    </div>
+    <button id="btnUnbet" onclick="unbet()" style="border-color:#aaa;color:#aaa">
+  UNBET
+</button>
+    <p id="betStatus" style="font-size:0.8em;color:#ffcc00;min-height:1.2em"></p>
+  </div>
+
+  <button onclick="logout()">LOGOUT</button>
+</div>
+
+<!-- LEADERBOARD -->
+<div class="box">
+  <h3>Leaderboard</h3>
+  <div class="leaderboard" id="leaderboard">Loading...</div>
+</div>
+
+<audio id="yesAudio" src="yes.mp3"></audio>
+<audio id="noAudio" src="no.mp3"></audio>
+<audio id="bgMusic" src="background.mp3" loop></audio>
+
+<div id="flash"></div>
+<div id="text">JackPot</div>
+
+<script src="brainh.js"></script>
+</body>
+</html>
